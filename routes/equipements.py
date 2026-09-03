@@ -13,6 +13,19 @@ from schemas.equipement import EquipementCreate, EquipementUpdate
 router = APIRouter(prefix="/equipements", tags=["equipements"])
 
 
+def _appliquer_capacites_type(equipement: Equipement, type_equipement: TypeEquipement) -> None:
+    """Force à vide/zéro les champs que le type d'équipement ne supporte pas (ex: pas d'IP
+    sur un équipement passif), pour que la règle métier tienne même via un appel API direct
+    et pas seulement parce que le formulaire frontend masque ces champs."""
+    if not type_equipement.possede_ip:
+        equipement.adresse_ip = None
+    if not type_equipement.possede_port:
+        equipement.nbre_port_pon = 0
+        equipement.nbre_port = 0
+    if not type_equipement.possede_ratio:
+        equipement.ratio = 0
+
+
 def _out(e: Equipement) -> dict:
     t = e.type_equipement
     return {
@@ -111,6 +124,7 @@ def creer(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
     equipement = Equipement(**payload.model_dump())
+    _appliquer_capacites_type(equipement, type_equipement)
     db.add(equipement)
     db.commit()
     db.refresh(equipement)
@@ -124,7 +138,7 @@ def modifier(
     payload: EquipementUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    utilisateur: Utilisateur = Depends(require_admin_ou_technicien),
+    utilisateur: Utilisateur = Depends(require_admin),
 ):
     equipement = db.query(Equipement).filter(
         Equipement.id_equipement == equipement_id, Equipement.supprime == False  # noqa: E712
@@ -133,6 +147,12 @@ def modifier(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(equipement, field, value)
+
+    type_equipement = db.query(TypeEquipement).filter(TypeEquipement.id == equipement.type_equipement_id).first()
+    if not type_equipement:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Type d'équipement invalide")
+    _appliquer_capacites_type(equipement, type_equipement)
 
     try:
         valider_coordonnees_ville(equipement.ville, equipement.latitude, equipement.longitude)

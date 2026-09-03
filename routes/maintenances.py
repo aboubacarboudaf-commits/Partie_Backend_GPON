@@ -61,12 +61,19 @@ def techniciens_disponibles(db: Session = Depends(get_db), _=Depends(get_current
 
 
 @router.get("/")
-def lister(statut: Optional[str] = None, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def lister(
+    statut: Optional[str] = None,
+    db: Session = Depends(get_db),
+    utilisateur: Utilisateur = Depends(get_current_user),
+):
     query = db.query(Maintenance).options(
         joinedload(Maintenance.equipement), joinedload(Maintenance.incident)
     ).filter(Maintenance.supprime == False)  # noqa: E712
     if statut:
         query = query.filter(Maintenance.statut == statut)
+    if utilisateur.role == 2:
+        # Un technicien ne voit que les maintenances qui lui sont assignées ; un admin voit tout.
+        query = query.filter(Maintenance.technicien == utilisateur.nom)
     return [_out(m) for m in query.order_by(Maintenance.date_planifiee.desc()).all()]
 
 
