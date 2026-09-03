@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session, joinedload
 
 from core.audit import log_action
-from core.security import get_current_user, require_admin_ou_technicien
+from core.security import get_current_user, require_admin, require_admin_ou_technicien
 from core.villes import valider_coordonnees_ville
 from database import get_db
 from models import Equipement, Liaison, TypeEquipement, Utilisateur
@@ -99,7 +99,7 @@ def creer(
     payload: EquipementCreate,
     request: Request,
     db: Session = Depends(get_db),
-    utilisateur: Utilisateur = Depends(require_admin_ou_technicien),
+    utilisateur: Utilisateur = Depends(require_admin),
 ):
     type_equipement = db.query(TypeEquipement).filter(TypeEquipement.id == payload.type_equipement_id).first()
     if not type_equipement:
@@ -171,7 +171,7 @@ def supprimer(
     equipement_id: int,
     request: Request,
     db: Session = Depends(get_db),
-    utilisateur: Utilisateur = Depends(require_admin_ou_technicien),
+    utilisateur: Utilisateur = Depends(require_admin),
 ):
     equipement = db.query(Equipement).filter(
         Equipement.id_equipement == equipement_id, Equipement.supprime == False  # noqa: E712

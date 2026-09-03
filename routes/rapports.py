@@ -104,11 +104,13 @@ def generer(
     request: Request,
     db: Session = Depends(get_db),
     utilisateur: Utilisateur = Depends(require_admin_ou_technicien),
+    description: str = None,
 ):
     contenu = _contenu_pour_type(db, type)
     rapport = Rapport(
         type=type,
         titre=titre,
+        description=description,
         date_rapport=date.today(),
         format="pdf",
         contenu=json.dumps(contenu),
