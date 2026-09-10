@@ -13,7 +13,6 @@ from routes import (
     maintenances,
     rapports,
     reseaux,
-    simulation,
     statistics,
     type_equipements,
     type_liaisons,
@@ -47,7 +46,6 @@ app.include_router(incidents.router, prefix=API_PREFIX)
 app.include_router(maintenances.router, prefix=API_PREFIX)
 app.include_router(rapports.router, prefix=API_PREFIX)
 app.include_router(statistics.router, prefix=API_PREFIX)
-app.include_router(simulation.router, prefix=API_PREFIX)
 app.include_router(zabbix.router, prefix=API_PREFIX)
 app.include_router(audit_logs.router, prefix=API_PREFIX)
 app.include_router(upload.router, prefix=API_PREFIX)
