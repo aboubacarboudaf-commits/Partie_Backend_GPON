@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from core.audit import log_action
 from core.auto_maintenance import creer_maintenance_automatique
-from core.security import get_current_user
+from core.security import get_current_user, require_admin_ou_technicien
 from core.zabbix_client import get_zabbix_client
 from database import get_db
 from models import Equipement, Incident
@@ -58,7 +58,7 @@ def mapping(db: Session = Depends(get_db), _=Depends(get_current_user)):
 
 
 @router.get("/sync")
-def sync(request: Request, db: Session = Depends(get_db), utilisateur=Depends(get_current_user)):
+def sync(request: Request, db: Session = Depends(get_db), utilisateur=Depends(require_admin_ou_technicien)):
     client = get_zabbix_client()
     if not client:
         return {"incidents_crees": 0, "incidents_fermes": 0}
