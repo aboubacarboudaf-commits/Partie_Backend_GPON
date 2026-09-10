@@ -42,6 +42,7 @@ def creer_maintenance_automatique(
         type="corrective",
         statut="planifiee",
         equipement_id=incident.equipement_id,
+        liaison_id=incident.liaison_id,
         incident_id=incident.id_incident,
         technicien=technicien.nom if technicien else None,
         date_planifiee=date.today(),

@@ -8,7 +8,9 @@ from core.audit import log_action
 from core.auto_maintenance import creer_maintenance_automatique
 from core.security import get_current_user, require_admin_ou_technicien
 from database import get_db
-from models import Equipement, Incident, Utilisateur
+from models import Equipement, Incident, Liaison, Utilisateur
+
+ETAT_PAR_TYPE_SCENARIO = {"panne": "inactif", "degradation": "maintenance"}
 
 router = APIRouter(prefix="/simulation", tags=["simulation"])
 
@@ -105,35 +107,66 @@ def panne_reelle(
     if not scenario:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Scénario inconnu")
 
-    equipement = (
-        db.query(Equipement)
-        .filter(Equipement.supprime == False, Equipement.etat == "actif")  # noqa: E712
-        .order_by(func.rand())
-        .first()
-    )
-    if not equipement:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Aucun équipement actif disponible pour la simulation")
+    if scenario["type"] == "coupure":
+        liaison = (
+            db.query(Liaison)
+            .filter(Liaison.supprime == False, Liaison.statut == "ok")  # noqa: E712
+            .order_by(func.rand())
+            .first()
+        )
+        if not liaison:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Aucune liaison disponible pour la simulation")
 
-    description = f"[SIMULATION] {scenario['emoji']} {scenario['description']} - Équipement: {equipement.libelle}"
-    incident = Incident(
-        type=scenario["type"],
-        source="automatique",
-        description=description,
-        equipement_id=equipement.id_equipement,
-        statut="ouvert",
-        priorite=scenario["priorite"],
-        date_ouverture=date.today(),
-    )
+        liaison.statut = "rompu"
+        source = db.query(Equipement).filter(Equipement.id_equipement == liaison.source_id).first()
+        destination = db.query(Equipement).filter(Equipement.id_equipement == liaison.destination_id).first()
+        cible_libelle = f"{source.libelle if source else '?'} → {destination.libelle if destination else '?'}"
+
+        description = f"[SIMULATION] {scenario['emoji']} {scenario['description']} - Liaison: {cible_libelle}"
+        incident = Incident(
+            type=scenario["type"],
+            source="automatique",
+            description=description,
+            liaison_id=liaison.id,
+            equipement_id=liaison.source_id,
+            statut="ouvert",
+            priorite=scenario["priorite"],
+            date_ouverture=date.today(),
+        )
+    else:
+        equipement = (
+            db.query(Equipement)
+            .filter(Equipement.supprime == False, Equipement.etat == "actif")  # noqa: E712
+            .order_by(func.rand())
+            .first()
+        )
+        if not equipement:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Aucun équipement actif disponible pour la simulation")
+
+        equipement.etat = ETAT_PAR_TYPE_SCENARIO.get(scenario["type"], "maintenance")
+        cible_libelle = equipement.libelle
+
+        description = f"[SIMULATION] {scenario['emoji']} {scenario['description']} - Équipement: {equipement.libelle}"
+        incident = Incident(
+            type=scenario["type"],
+            source="automatique",
+            description=description,
+            equipement_id=equipement.id_equipement,
+            statut="ouvert",
+            priorite=scenario["priorite"],
+            date_ouverture=date.today(),
+        )
+
     db.add(incident)
     db.commit()
     db.refresh(incident)
 
-    log_action(db, "creation", "incident", incident.id_incident, f"Simulation panne: {scenario['nom']} sur {equipement.libelle}", utilisateur, request)
+    log_action(db, "creation", "incident", incident.id_incident, f"Simulation panne: {scenario['nom']} sur {cible_libelle}", utilisateur, request)
     creer_maintenance_automatique(db, incident, utilisateur, request)
 
     return {
         "scenario": scenario["nom"],
-        "equipement_impacte": equipement.libelle,
+        "equipement_impacte": cible_libelle,
         "description": description,
         "actions": scenario["actions"],
     }
@@ -154,6 +187,14 @@ def reparer_tout(
     for incident in incidents:
         incident.statut = "resolu"
         incident.date_fermeture = date.today()
+        if incident.liaison_id:
+            liaison = db.query(Liaison).filter(Liaison.id == incident.liaison_id).first()
+            if liaison:
+                liaison.statut = "ok"
+        elif incident.equipement_id:
+            equipement = db.query(Equipement).filter(Equipement.id_equipement == incident.equipement_id).first()
+            if equipement:
+                equipement.etat = "actif"
     db.commit()
 
     log_action(db, "modification", "incident", None, f"Réparation simulation: {len(incidents)} incident(s) résolu(s)", utilisateur, request)
