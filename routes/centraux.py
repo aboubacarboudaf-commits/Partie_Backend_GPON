@@ -7,7 +7,7 @@ from core.audit import log_action
 from core.security import get_current_user, require_admin
 from core.villes import valider_coordonnees_ville
 from database import get_db
-from models import Central, Utilisateur
+from models import Central, Equipement, Utilisateur
 from schemas.central import CentralCreate, CentralUpdate
 
 router = APIRouter(prefix="/centraux", tags=["centraux"])
@@ -74,7 +74,8 @@ def modifier(
     central = db.query(Central).filter(Central.id == central_id, Central.supprime == False).first()  # noqa: E712
     if not central:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Central introuvable")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    champs_modifies = payload.model_dump(exclude_unset=True)
+    for field, value in champs_modifies.items():
         setattr(central, field, value)
 
     try:
@@ -82,6 +83,12 @@ def modifier(
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+    if "latitude" in champs_modifies or "longitude" in champs_modifies:
+        # Les équipements posés dans ce central/chambre partagent physiquement ses coordonnées.
+        db.query(Equipement).filter(Equipement.central_id == central.id).update(
+            {"latitude": central.latitude, "longitude": central.longitude}
+        )
 
     db.commit()
     db.refresh(central)

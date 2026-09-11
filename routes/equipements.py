@@ -7,7 +7,7 @@ from core.audit import log_action
 from core.security import get_current_user, require_admin, require_admin_ou_technicien
 from core.villes import valider_coordonnees_ville
 from database import get_db
-from models import Equipement, Liaison, TypeEquipement, Utilisateur
+from models import Central, Equipement, Liaison, TypeEquipement, Utilisateur
 from schemas.equipement import EquipementCreate, EquipementUpdate
 
 router = APIRouter(prefix="/equipements", tags=["equipements"])
@@ -24,6 +24,19 @@ def _appliquer_capacites_type(equipement: Equipement, type_equipement: TypeEquip
         equipement.nbre_port = 0
     if not type_equipement.possede_ratio:
         equipement.ratio = 0
+
+
+def _synchroniser_coordonnees_central(equipement: Equipement, db: Session) -> None:
+    """Un équipement posé dans un central/chambre partage physiquement ses coordonnées GPS
+    (même point sur la carte), donc on les recopie depuis le central plutôt que de faire
+    confiance à des coordonnées saisies séparément."""
+    central = db.query(Central).filter(
+        Central.id == equipement.central_id, Central.supprime == False  # noqa: E712
+    ).first()
+    if not central:
+        raise ValueError("Central/chambre introuvable")
+    equipement.latitude = central.latitude
+    equipement.longitude = central.longitude
 
 
 def _out(e: Equipement) -> dict:
@@ -118,13 +131,17 @@ def creer(
     if not type_equipement:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Type d'équipement invalide")
 
+    equipement = Equipement(**payload.model_dump())
+    _appliquer_capacites_type(equipement, type_equipement)
+
     try:
-        valider_coordonnees_ville(payload.ville, payload.latitude, payload.longitude)
+        if equipement.central_id:
+            _synchroniser_coordonnees_central(equipement, db)
+        else:
+            valider_coordonnees_ville(equipement.ville, equipement.latitude, equipement.longitude)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
 
-    equipement = Equipement(**payload.model_dump())
-    _appliquer_capacites_type(equipement, type_equipement)
     db.add(equipement)
     db.commit()
     db.refresh(equipement)
@@ -155,7 +172,10 @@ def modifier(
     _appliquer_capacites_type(equipement, type_equipement)
 
     try:
-        valider_coordonnees_ville(equipement.ville, equipement.latitude, equipement.longitude)
+        if equipement.central_id:
+            _synchroniser_coordonnees_central(equipement, db)
+        else:
+            valider_coordonnees_ville(equipement.ville, equipement.latitude, equipement.longitude)
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
