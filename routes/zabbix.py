@@ -42,7 +42,9 @@ def mapping(db: Session = Depends(get_db), _=Depends(get_current_user)):
         }
 
     # Pas de serveur Zabbix configuré (ZABBIX_URL absent du .env) : simulation à partir du
-    # type/état de l'équipement, pour que les pages fonctionnent quand même sans erreur.
+    # type/état de l'équipement, mais uniquement pour les équipements réellement rattachés à
+    # un host Zabbix (zabbix_host_id renseigné) — les autres ne sont pas supervisés du tout,
+    # ils ne doivent donc pas apparaître comme "up".
     return {
         "mapping": [
             {
@@ -50,9 +52,10 @@ def mapping(db: Session = Depends(get_db), _=Depends(get_current_user)):
                 "zabbix_available": bool(
                     e.type_equipement and e.type_equipement.categorie == "actif" and e.etat == "actif"
                 ),
-                "zabbix_host": f"host-{e.id_equipement}" if e.type_equipement and e.type_equipement.categorie == "actif" else None,
+                "zabbix_host": e.zabbix_host_id,
             }
             for e in equipements
+            if e.zabbix_host_id
         ]
     }
 

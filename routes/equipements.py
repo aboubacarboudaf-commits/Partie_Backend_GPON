@@ -29,12 +29,17 @@ def _appliquer_capacites_type(equipement: Equipement, type_equipement: TypeEquip
 def _synchroniser_coordonnees_central(equipement: Equipement, db: Session) -> None:
     """Un équipement posé dans un central/chambre partage physiquement ses coordonnées GPS
     (même point sur la carte), donc on les recopie depuis le central plutôt que de faire
-    confiance à des coordonnées saisies séparément."""
+    confiance à des coordonnées saisies séparément.
+
+    Si le central référencé n'existe plus (supprimé) ou n'a pas lui-même de coordonnées
+    valides, on ne touche pas aux coordonnées existantes de l'équipement : bloquer toute
+    la mise à jour (ex. un simple déplacement sur la carte) pour un problème de données
+    sur le central serait pire que de laisser l'équipement tel quel."""
     central = db.query(Central).filter(
         Central.id == equipement.central_id, Central.supprime == False  # noqa: E712
     ).first()
-    if not central:
-        raise ValueError("Central/chambre introuvable")
+    if not central or central.latitude is None or central.longitude is None:
+        return
     equipement.latitude = central.latitude
     equipement.longitude = central.longitude
 
