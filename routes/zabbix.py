@@ -25,26 +25,26 @@ def mapping(db: Session = Depends(get_db), _=Depends(get_current_user)):
 
     client = get_zabbix_client()
     if client:
-        equipements_mappes = [e for e in equipements if e.zabbix_host_id]
-        statuts = client.get_hosts_status([e.zabbix_host_id for e in equipements_mappes])
-        mapping_par_equipement = {
-            e.id_equipement: (statuts.get(e.zabbix_host_id) or {}) for e in equipements_mappes
-        }
+        # Le mapping se fait par adresse IP : un équipement est considéré supervisé dès que
+        # Zabbix connaît un host avec cette IP, sans configuration manuelle supplémentaire.
+        equipements_avec_ip = [e for e in equipements if e.adresse_ip]
+        statuts = client.get_hosts_by_ip([e.adresse_ip for e in equipements_avec_ip])
         return {
             "mapping": [
                 {
                     "equipement_id": e.id_equipement,
-                    "zabbix_available": bool(mapping_par_equipement.get(e.id_equipement, {}).get("available")),
-                    "zabbix_host": e.zabbix_host_id,
+                    "zabbix_available": bool(statuts[e.adresse_ip]["available"]),
+                    "zabbix_host": statuts[e.adresse_ip]["hostid"],
                 }
-                for e in equipements_mappes
+                for e in equipements_avec_ip
+                if e.adresse_ip in statuts
             ]
         }
 
     # Pas de serveur Zabbix configuré (ZABBIX_URL absent du .env) : simulation à partir du
-    # type/état de l'équipement, mais uniquement pour les équipements réellement rattachés à
-    # un host Zabbix (zabbix_host_id renseigné) — les autres ne sont pas supervisés du tout,
-    # ils ne doivent donc pas apparaître comme "up".
+    # type/état de l'équipement, mais uniquement pour les équipements ayant une IP (donc
+    # potentiellement supervisables) — les autres ne sont pas supervisés du tout, ils ne
+    # doivent donc pas apparaître comme "up".
     return {
         "mapping": [
             {
@@ -52,10 +52,10 @@ def mapping(db: Session = Depends(get_db), _=Depends(get_current_user)):
                 "zabbix_available": bool(
                     e.type_equipement and e.type_equipement.categorie == "actif" and e.etat == "actif"
                 ),
-                "zabbix_host": e.zabbix_host_id,
+                "zabbix_host": None,
             }
             for e in equipements
-            if e.zabbix_host_id
+            if e.adresse_ip
         ]
     }
 
@@ -67,12 +67,18 @@ def sync(request: Request, db: Session = Depends(get_db), utilisateur=Depends(re
         return {"incidents_crees": 0, "incidents_fermes": 0}
 
     equipements = db.query(Equipement).filter(
-        Equipement.supprime == False, Equipement.zabbix_host_id.isnot(None)  # noqa: E712
+        Equipement.supprime == False, Equipement.adresse_ip.isnot(None)  # noqa: E712
     ).all()
     if not equipements:
         return {"incidents_crees": 0, "incidents_fermes": 0}
 
-    equipement_par_host = {e.zabbix_host_id: e for e in equipements}
+    statuts = client.get_hosts_by_ip([e.adresse_ip for e in equipements])
+    equipement_par_host = {
+        statuts[e.adresse_ip]["hostid"]: e for e in equipements if e.adresse_ip in statuts
+    }
+    if not equipement_par_host:
+        return {"incidents_crees": 0, "incidents_fermes": 0}
+
     problemes = client.get_active_problems(list(equipement_par_host.keys()))
     eventids_actifs = {p["eventid"] for p in problemes}
 

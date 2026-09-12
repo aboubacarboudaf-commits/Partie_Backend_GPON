@@ -59,20 +59,33 @@ class ZabbixClient:
             return True
         return False
 
-    def get_hosts_status(self, host_ids: list) -> dict:
-        """Retourne {zabbix_host_id: {"available": bool, "status": str}} pour les hosts demandés."""
-        if not host_ids or not self._ensure_auth():
+    def get_hosts_by_ip(self, adresses_ip: list) -> dict:
+        """Retourne {adresse_ip: {"hostid":..., "available": bool, "status": str}} pour les
+        hosts Zabbix dont une interface correspond à une des adresses IP demandées.
+
+        Le mapping équipement ↔ host Zabbix se fait par adresse IP (pas par un identifiant
+        saisi manuellement) : dès qu'un équipement a une IP supervisée côté Zabbix, il
+        apparaît automatiquement, comme au moment de la config initiale."""
+        if not adresses_ip or not self._ensure_auth():
             return {}
         result = self._call(
             "host.get",
-            {"output": ["hostid", "host", "status", "available"], "hostids": host_ids},
+            {"output": ["hostid", "status", "available"], "selectInterfaces": ["ip"]},
         )
         if not result:
             return {}
-        return {
-            h["hostid"]: {"available": h.get("available") == "1", "status": h.get("status")}
-            for h in result
-        }
+        ip_recherchees = set(adresses_ip)
+        mapping = {}
+        for h in result:
+            for interface in h.get("interfaces") or []:
+                ip = interface.get("ip")
+                if ip in ip_recherchees:
+                    mapping[ip] = {
+                        "hostid": h["hostid"],
+                        "available": h.get("available") == "1",
+                        "status": h.get("status"),
+                    }
+        return mapping
 
     def get_active_problems(self, host_ids: list) -> list:
         """Retourne la liste des problèmes actifs (non résolus) pour les hosts demandés."""
