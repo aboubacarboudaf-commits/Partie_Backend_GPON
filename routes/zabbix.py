@@ -28,7 +28,7 @@ def mapping(db: Session = Depends(get_db), _=Depends(get_current_user)):
         equipements_mappes = [e for e in equipements if e.zabbix_host_id]
         statuts = client.get_hosts_status([e.zabbix_host_id for e in equipements_mappes])
         mapping_par_equipement = {
-            e.id_equipement: statuts.get(e.zabbix_host_id) for e in equipements_mappes
+            e.id_equipement: (statuts.get(e.zabbix_host_id) or {}) for e in equipements_mappes
         }
         return {
             "mapping": [
