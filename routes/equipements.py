@@ -167,7 +167,8 @@ def modifier(
     ).first()
     if not equipement:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Équipement introuvable")
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    champs_modifies = payload.model_dump(exclude_unset=True)
+    for field, value in champs_modifies.items():
         setattr(equipement, field, value)
 
     type_equipement = db.query(TypeEquipement).filter(TypeEquipement.id == equipement.type_equipement_id).first()
@@ -179,7 +180,11 @@ def modifier(
     try:
         if equipement.central_id:
             _synchroniser_coordonnees_central(equipement, db)
-        else:
+        elif champs_modifies.keys() & {"ville", "latitude", "longitude"}:
+            # On ne revalide la cohérence ville/coordonnées que si la requête les modifie
+            # réellement : sinon un équipement dont les données historiques sont déjà
+            # incohérentes ne pourrait plus jamais être mis à jour (ex: simple déplacement
+            # de sa position sur la carte, changement d'état, etc.).
             valider_coordonnees_ville(equipement.ville, equipement.latitude, equipement.longitude)
     except ValueError as exc:
         db.rollback()
