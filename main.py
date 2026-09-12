@@ -1,8 +1,12 @@
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from core.config import CORS_ORIGINS
+from core.scheduler import boucle_synchronisation_zabbix
 from routes import (
     audit_logs,
     auth,
@@ -21,7 +25,14 @@ from routes import (
     zabbix,
 )
 
-app = FastAPI(title="GPONMap API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    tache_zabbix = asyncio.create_task(boucle_synchronisation_zabbix())
+    yield
+    tache_zabbix.cancel()
+
+
+app = FastAPI(title="GPONMap API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

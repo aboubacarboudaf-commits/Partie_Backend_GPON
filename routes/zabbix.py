@@ -60,8 +60,12 @@ def mapping(db: Session = Depends(get_db), _=Depends(get_current_user)):
     }
 
 
-@router.get("/sync")
-def sync(request: Request, db: Session = Depends(get_db), utilisateur=Depends(require_admin_ou_technicien)):
+def synchroniser_zabbix(db: Session, utilisateur=None, request: Request = None) -> dict:
+    """Interroge Zabbix pour détecter les pannes/rétablissements et crée/ferme les incidents
+    correspondants. Appelée à la fois par la route /sync (déclenchement manuel/frontend) et
+    par la tâche de fond périodique (core/scheduler.py), pour que la détection soit
+    automatique dès qu'un équipement tombe en panne ou revient côté Zabbix, sans qu'une page
+    de l'application ait besoin d'être ouverte."""
     client = get_zabbix_client()
     if not client:
         return {"incidents_crees": 0, "incidents_fermes": 0}
@@ -121,3 +125,8 @@ def sync(request: Request, db: Session = Depends(get_db), utilisateur=Depends(re
     db.commit()
 
     return {"incidents_crees": incidents_crees, "incidents_fermes": len(incidents_a_fermer)}
+
+
+@router.get("/sync")
+def sync(request: Request, db: Session = Depends(get_db), utilisateur=Depends(require_admin_ou_technicien)):
+    return synchroniser_zabbix(db, utilisateur, request)
