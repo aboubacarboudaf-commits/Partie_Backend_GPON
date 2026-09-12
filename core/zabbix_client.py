@@ -29,13 +29,16 @@ class ZabbixClient:
     def _call(self, method: str, params: dict) -> Optional[dict]:
         self._id += 1
         payload = {"jsonrpc": "2.0", "method": method, "params": params, "id": self._id}
+        headers = {"Content-Type": "application/json-rpc"}
         if self._token and method != "user.login":
-            payload["auth"] = self._token
+            # Zabbix 6.4+/7.0 n'accepte plus le jeton dans le corps de la requête ("auth":
+            # ...) : il doit être passé via l'en-tête Authorization Bearer.
+            headers["Authorization"] = f"Bearer {self._token}"
         try:
             resp = requests.post(
                 self.url,
                 json=payload,
-                headers={"Content-Type": "application/json-rpc"},
+                headers=headers,
                 timeout=5,
             )
             resp.raise_for_status()
